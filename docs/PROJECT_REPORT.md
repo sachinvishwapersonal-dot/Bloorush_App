@@ -24,9 +24,9 @@ By employing **Capacitor**, we wrap the proven web application into native iOS a
 | **Phase 1** | Environment Setup & Capacitor Initialization | ✅ **COMPLETED** | Passed `npx cap doctor android` & asset sync |
 | **Phase 2** | Mobile Viewport & Safe-Area UI Adaptations | ✅ **COMPLETED** | Added `viewport-fit=cover`, safe-area insets & touch handling |
 | **Phase 3** | Native Plugins Integration (GPS, Push, Haptics) | ✅ **COMPLETED** | 5 Plugins installed & bridged: GPS, Haptics, Push, StatusBar, Keyboard |
-| **Phase 4** | Automated Android Build Pipeline (GitHub Actions) | ✅ **CONFIGURED** | Workflow ready to auto-compile `app-debug.apk` in cloud |
-| **Phase 5** | iOS Cloud Build Pipeline (GitHub Actions) | ✅ **CONFIGURED** | Workflow ready on cloud macOS runner |
-| **Phase 6** | End-to-End Testing & Verification | 🔄 **READY** | Trigger cloud build & install APK on phone |
+| **Phase 4** | Automated Android Build Pipeline (GitHub Actions) | ✅ **COMPLETED** | Generated `BlooRush-Android-APK` (5.5 MB `app-debug.apk`) |
+| **Phase 5** | iOS Cloud Build Pipeline (GitHub Actions) | ✅ **COMPLETED** | Generated `BlooRush-iOS-App` package on macOS runner |
+| **Phase 6** | End-to-End Testing & Verification | 🔄 **IN PROGRESS** | Download APK and install on Android device |
 
 ---
 
