@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>BlooRush Partner</title>
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://mvp-bloorush.firebaseapp.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- LOGIN -->
+  <div id="login" class="wrap center">
+    <div class="brand" style="font-size:24px;margin-bottom:6px;">BlooRush</div>
+    <h1>Partner Login</h1>
+    <p class="sub">Enter your phone number and PIN.</p>
+    <label for="phone">Phone number</label>
+    <input id="phone" inputmode="tel" placeholder="9876500001" />
+    <label for="pin">PIN</label>
+    <input id="pin" type="password" inputmode="numeric" placeholder="••••" />
+    <div class="spacer"></div>
+    <button class="btn" onclick="doLogin()">Log in</button>
+    <div id="loginErr" class="err"></div>
+  </div>
+
+  <!-- APP -->
+  <div id="app" style="display:none;">
+    <div class="topbar">
+      <button class="linkbtn" onclick="toggleMenu()" style="font-size:20px;">☰</button>
+      <span class="brand" id="sectionTitle">My Jobs</span>
+      <button class="linkbtn" id="logoutBtn" onclick="logout()">Log out</button>
+    </div>
+
+    <div id="menu" class="menu" style="display:none;">
+      <button id="navJobs" onclick="showSection('jobs')">📋 My Jobs</button>
+      <button id="navProfile" onclick="showSection('profile')">👤 Profile</button>
+    </div>
+
+    <div class="wrap">
+      <section id="sec-jobs">
+        <p class="sub" id="hello" style="margin-bottom:2px;"></p>
+        <h1 id="hubLabel"></h1>
+        <div class="spacer"></div>
+        <div class="grid" id="stats"></div>
+        <h2 id="jobsHeading">Your jobs today</h2>
+        <div id="jobs"></div>
+      </section>
+
+      <section id="sec-profile" style="display:none;">
+        <h1 id="profileHeading">Profile</h1>
+        <div class="card" id="profileCard"></div>
+        <div class="spacer"></div>
+        <button class="btn secondary" id="changePinBtn" onclick="changePin()">Change PIN</button>
+      </section>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" defer></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" defer></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js" defer></script>
+  <script src="data.js" defer></script>
+  <script src="../mobile-bridge.js" defer></script>
+  <script src="partner.js" defer></script>
+</body>
+</html>

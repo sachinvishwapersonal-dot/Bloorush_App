@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>BlooRush Admin</title>
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://mvp-bloorush.firebaseapp.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- LOGIN -->
+  <div id="login" class="wrap center">
+    <div class="brand" style="font-size:24px;margin-bottom:6px;">BlooRush</div>
+    <h1>Admin Portal</h1>
+    <p class="sub">Sign in to manage jobs and partners.</p>
+    <label for="email">Email</label>
+    <input id="email" type="email" placeholder="admin@bloorush.app" />
+    <label for="password">Password</label>
+    <input id="password" type="password" placeholder="••••••••" />
+    <div class="spacer"></div>
+    <button class="btn" onclick="doLogin()">Sign in</button>
+    <div id="loginErr" class="err"></div>
+  </div>
+
+  <!-- APP -->
+  <div id="app" style="display:none;">
+    <div class="topbar">
+      <button class="linkbtn" onclick="toggleMenu()" style="font-size:20px;">☰</button>
+      <span class="brand" id="sectionTitle">Dashboard</span>
+      <button class="linkbtn" onclick="logout()">Log out</button>
+    </div>
+
+    <div id="menu" class="menu" style="display:none;">
+      <button onclick="showSection('dashboard')">📊 Dashboard</button>
+      <button onclick="showSection('attendance')">🟢 Attendance</button>
+      <button onclick="showSection('create')">➕ Create Job</button>
+      <button onclick="showSection('jobs')">📋 All Jobs</button>
+      <button onclick="showSection('partners')">👷 Partners</button>
+      <button onclick="showSection('slots')">🗓️ Slots</button>
+      <button onclick="showSection('coupons')">🎟️ Coupons</button>
+    </div>
+
+    <div class="wrap">
+      <!-- DASHBOARD -->
+      <section id="sec-dashboard">
+        <div id="ops"></div>
+        <div id="inbox"></div>
+        <label for="opsDate">Showing</label>
+        <input id="opsDate" type="date" onchange="onDateChange()" />
+        <div class="spacer"></div>
+        <h2>Bookings on this day</h2>
+        <div id="dayCounts" class="daycounts"></div>
+        <div id="dayJobs"></div>
+      </section>
+
+      <!-- ATTENDANCE -->
+      <section id="sec-attendance" style="display:none;">
+        <h1>Attendance</h1>
+        <p class="sub">Pick a date to view or mark attendance, in/out time, lateness and notes.</p>
+        <label for="attDate">Date</label>
+        <input id="attDate" type="date" onchange="onAttDateChange()" />
+        <div class="spacer"></div>
+        <div id="attendanceSummary"></div>
+        <div id="attendanceList"></div>
+      </section>
+
+      <!-- CREATE JOB -->
+      <section id="sec-create" style="display:none;">
+        <h1 id="formTitle">Create a job</h1>
+        <div class="card">
+          <label>Customer name</label>
+          <input id="f_customerName" />
+          <label>Customer phone</label>
+          <input id="f_customerPhone" inputmode="tel" />
+          <label>Full address</label>
+          <textarea id="f_address"></textarea>
+          <label>Google Maps link</label>
+          <input id="f_mapsLink" placeholder="https://maps.google.com/..." />
+          <label>Services (tap to add, set quantity)</label>
+          <input id="svcSearch" placeholder="Search services…" oninput="renderServiceOptions()" />
+          <div id="svcList" class="svc-list"></div>
+          <div id="svcSummary" class="svc-summary"></div>
+          <label>Time slot</label>
+          <div class="slot-cols">
+            <div id="slotStart" class="time-list"></div>
+            <div id="slotEnd" class="time-list"></div>
+          </div>
+          <div id="slotSummary" class="svc-summary"></div>
+          <label>Date</label>
+          <input id="f_date" type="date" />
+          <label>Customer price (₹) — auto from services, edit if discounted</label>
+          <input id="f_customerPrice" type="number" inputmode="numeric" placeholder="auto" oninput="onPriceEdit()" />
+          <label>Payment</label>
+          <select id="f_payStatus">
+            <option value="cash">Collect cash after job</option>
+            <option value="paid">Already paid online</option>
+          </select>
+          <label>Penalty (₹)</label>
+          <input id="f_penalty" type="number" inputmode="numeric" value="0" />
+          <div id="incentiveBox" class="svc-summary"></div>
+          <label>Booking ID (optional)</label>
+          <input id="f_bookingId" placeholder="from bloorush.in booking — optional" />
+          <label>Note to partner (shown on their job card)</label>
+          <textarea id="f_instructions" placeholder="e.g. Ring bell twice, dog is friendly, gate code 1234"></textarea>
+          <label>Assign to partner</label>
+          <select id="f_partner"></select>
+          <div class="spacer"></div>
+          <button class="btn" id="saveBtn" onclick="saveJob()">Create &amp; assign job</button>
+          <button class="btn secondary" id="cancelBtn" style="display:none;margin-top:8px;" onclick="cancelEdit()">Cancel edit</button>
+          <div id="createMsg" class="err"></div>
+        </div>
+      </section>
+
+      <!-- ALL JOBS -->
+      <section id="sec-jobs" style="display:none;">
+        <h1>All Jobs</h1>
+        <label for="jobsDate">Filter by date</label>
+        <input id="jobsDate" type="date" onchange="onJobsDateChange()" />
+        <button class="linkbtn" style="margin-top:8px;" onclick="clearJobsDate()">Show all dates</button>
+        <div class="spacer"></div>
+        <div id="allJobs"></div>
+      </section>
+
+      <!-- PARTNERS -->
+      <section id="sec-partners" style="display:none;">
+        <h1 id="partnerFormTitle">Add partner</h1>
+        <div class="card">
+          <label>Name</label>
+          <input id="p_name" />
+          <label>Phone number</label>
+          <input id="p_phone" inputmode="tel" placeholder="9876500001" />
+          <div id="pinField">
+            <label>PIN (partner uses this to log in)</label>
+            <input id="p_pin" inputmode="numeric" placeholder="4-6 digits" />
+          </div>
+          <label>Hub</label>
+          <input id="p_hub" placeholder="Dharampeth Hub" />
+          <label>Dashboard language</label>
+          <select id="p_lang">
+            <option value="en">English</option>
+            <option value="hi">हिंदी (Hindi)</option>
+            <option value="mr">मराठी (Marathi)</option>
+          </select>
+          <label>Photo (optional)</label>
+          <input id="p_photo" type="file" accept="image/*" />
+          <div class="spacer"></div>
+          <button class="btn" id="savePartnerBtn" onclick="savePartner()">Add partner</button>
+          <button class="btn secondary" id="cancelPartnerBtn" style="display:none;margin-top:8px;" onclick="cancelPartnerEdit()">Cancel edit</button>
+          <div id="partnerMsg" class="err"></div>
+        </div>
+        <h2>Partners</h2>
+        <div id="partners"></div>
+      </section>
+
+      <!-- SLOTS -->
+      <section id="sec-slots" style="display:none;">
+        <h1>Slots &amp; Areas</h1>
+        <p class="sub">Turn service areas on/off, seed slots for the week, and set capacity per window.</p>
+
+        <div class="card">
+          <h2 style="margin-top:0">Service areas (on / off)</h2>
+          <p class="muted" style="font-size:12px">Switch an area off to stop all new bookings from there. Existing bookings are unaffected.</p>
+          <div id="zoneToggles"></div>
+        </div>
+
+        <div class="card">
+          <h2 style="margin-top:0">Seed slots for the week</h2>
+          <label>Default capacity per window</label>
+          <input id="slotDefaultCap" type="number" min="0" value="2" />
+          <div class="spacer"></div>
+          <button class="btn" onclick="generateWeek()">Generate next 7 days (fills missing slots)</button>
+        </div>
+
+        <div class="card">
+          <h2 style="margin-top:0">Edit slots</h2>
+          <label>Date</label>
+          <div id="slotDateStrip" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:6px"></div>
+          <label>Time slot</label>
+          <div id="slotWinTabs" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:6px"></div>
+        </div>
+        <div id="slotZoneRows"></div>
+      </section>
+
+      <!-- COUPONS -->
+      <section id="sec-coupons" style="display:none;">
+        <h1>Coupons</h1>
+        <p class="sub">Create and manage discount codes customers can apply at checkout.</p>
+        <button class="btn" onclick="editCoupon()">+ New coupon</button>
+        <div id="couponForm" style="display:none" class="card"></div>
+        <div class="spacer"></div>
+        <div id="couponList"></div>
+      </section>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" defer></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" defer></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js" defer></script>
+  <script src="data.js" defer></script>
+  <script src="services.js" defer></script>
+  <script src="admin.js" defer></script>
+</body>
+</html>

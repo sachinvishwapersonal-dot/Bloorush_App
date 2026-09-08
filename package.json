@@ -1,0 +1,21 @@
+{
+  "name": "bloorush-customer",
+  "version": "1.0.0",
+  "scripts": {
+    "build:mobile": "node scripts/build-mobile.js",
+    "cap:sync": "node scripts/build-mobile.js && npx cap sync",
+    "cap:android": "node scripts/build-mobile.js && npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/cli": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
+    "@capacitor/geolocation": "^8.2.2",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/keyboard": "^8.0.5",
+    "@capacitor/push-notifications": "^8.1.2",
+    "@capacitor/status-bar": "^8.0.3",
+    "firebase-admin": "^12.6.0",
+    "razorpay": "^2.9.4"
+  }
+}

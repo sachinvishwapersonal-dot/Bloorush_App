@@ -1,0 +1,12 @@
+{
+  "appId": "com.bloorush.app",
+  "appName": "BlooRush",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}
