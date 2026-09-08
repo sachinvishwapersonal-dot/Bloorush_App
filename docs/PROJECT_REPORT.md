@@ -86,3 +86,14 @@ flowchart TD
         Netlify --> FB
     end
 ```
+
+---
+
+## 5. Live Cloud Build Status & Download
+
+* **GitHub Repository**: [sachinvishwapersonal-dot/Bloorush_App](https://github.com/sachinvishwapersonal-dot/Bloorush_App)
+* **Live CI/CD Actions Run**: [View Actions Build Pipeline](https://github.com/sachinvishwapersonal-dot/Bloorush_App/actions)
+* **Artifacts Generated**:
+  - `BlooRush-Android-APK` (`app-debug.apk` ready for direct mobile installation)
+  - `BlooRush-iOS-App` (iOS application package generated on macOS runner)
+
