@@ -24,9 +24,9 @@ By employing **Capacitor**, we wrap the proven web application into native iOS a
 | **Phase 1** | Environment Setup & Capacitor Initialization | ✅ **COMPLETED** | Passed `npx cap doctor android` & asset sync |
 | **Phase 2** | Mobile Viewport & Safe-Area UI Adaptations | ✅ **COMPLETED** | Added `viewport-fit=cover`, safe-area insets & touch handling |
 | **Phase 3** | Native Plugins Integration (GPS, Push, Haptics) | ✅ **COMPLETED** | 5 Plugins installed & bridged: GPS, Haptics, Push, StatusBar, Keyboard |
-| **Phase 4** | Android Local Build (`.apk` Generation on Windows) | 🔄 **READY** | Build debug APK via Gradle / Android Studio |
-| **Phase 5** | iOS Cloud Build Pipeline (GitHub Actions) | ⏳ Queued | Free Mac runner CI/CD workflow |
-| **Phase 6** | End-to-End Testing & Verification | ⏳ Queued | Customer booking to partner completion |
+| **Phase 4** | Automated Android Build Pipeline (GitHub Actions) | ✅ **CONFIGURED** | Workflow ready to auto-compile `app-debug.apk` in cloud |
+| **Phase 5** | iOS Cloud Build Pipeline (GitHub Actions) | ✅ **CONFIGURED** | Workflow ready on cloud macOS runner |
+| **Phase 6** | End-to-End Testing & Verification | 🔄 **READY** | Trigger cloud build & install APK on phone |
 
 ---
 
