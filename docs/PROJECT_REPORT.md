@@ -96,4 +96,5 @@ flowchart TD
 * **Artifacts Generated**:
   - `BlooRush-Android-APK` (`app-debug.apk` ready for direct mobile installation)
   - `BlooRush-iOS-App` (iOS application package generated on macOS runner)
+* **Local Workspace File**: [`bloorush_1.0.apk`](file:///C:/Users/hp/Documents/Bloorush_App/bloorush_1.0.apk) (Downloaded and saved in project root)
 
