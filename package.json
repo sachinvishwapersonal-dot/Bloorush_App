@@ -1,22 +1,18 @@
 {
-  "name": "bloorush-customer",
+  "name": "bloorush-monorepo",
   "version": "1.0.0",
+  "description": "BlooRush App Ecosystem: Client App, Partner App & Web Admin Console",
   "scripts": {
-    "build:mobile": "node scripts/build-mobile.js",
-    "cap:sync": "node scripts/build-mobile.js && npx cap sync",
-    "cap:android": "node scripts/build-mobile.js && npx cap open android"
+    "build:client": "node apps/client/scripts/build.js",
+    "build:partner": "node apps/partner/scripts/build.js",
+    "build:all": "npm run build:client && npm run build:partner",
+    "cap:client:sync": "npm run build:client && cd apps/client && npx cap sync",
+    "cap:partner:sync": "npm run build:partner && cd apps/partner && npx cap sync",
+    "cap:client:android": "npm run build:client && cd apps/client && npx cap open android",
+    "cap:partner:android": "npm run build:partner && cd apps/partner && npx cap open android"
   },
   "dependencies": {
-    "@capacitor/android": "^8.5.1",
-    "@capacitor/cli": "^8.5.1",
-    "@capacitor/core": "^8.5.1",
-    "@capacitor/geolocation": "^8.2.2",
-    "@capacitor/haptics": "^8.0.2",
-    "@capacitor/ios": "^8.5.1",
-    "@capacitor/keyboard": "^8.0.5",
-    "@capacitor/push-notifications": "^8.1.2",
-    "@capacitor/status-bar": "^8.0.3",
-    "firebase-admin": "^12.6.0",
+    "@supabase/supabase-js": "^2.116.0",
     "razorpay": "^2.9.4"
   }
 }

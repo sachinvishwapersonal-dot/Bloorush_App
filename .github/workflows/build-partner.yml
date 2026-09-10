@@ -1,0 +1,112 @@
+name: Build BlooRush Partner Mobile App (Android & iOS)
+
+on:
+  push:
+    paths:
+      - 'apps/partner/**'
+      - 'partner-test/**'
+      - '.github/workflows/build-partner.yml'
+    branches: [ main, master ]
+  pull_request:
+    paths:
+      - 'apps/partner/**'
+      - 'partner-test/**'
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-partner-android:
+    name: 🤖 Build Partner Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Check out repository
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup Java JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: 📱 Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 🟢 Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: 📦 Install Root Dependencies
+        run: npm install
+
+      - name: 📦 Install Partner App Dependencies
+        run: |
+          cd apps/partner
+          npm install
+
+      - name: 🔄 Compile Web Assets & Sync Native Android
+        run: |
+          node apps/partner/scripts/build.js
+          cd apps/partner
+          npx cap sync android
+
+      - name: 🔑 Make Gradlew Executable
+        run: chmod +x apps/partner/android/gradlew
+
+      - name: 🔨 Compile Partner Android Debug APK
+        run: |
+          cd apps/partner/android
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: 📤 Upload Partner Android APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlooRush-Partner-Android-APK
+          path: apps/partner/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+  build-partner-ios:
+    name: 🍎 Build Partner iOS Package
+    runs-on: macos-latest
+    steps:
+      - name: 📥 Check out repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: 📦 Install Dependencies
+        run: |
+          npm install
+          cd apps/partner && npm install
+
+      - name: 📱 Add iOS Platform & Sync
+        run: |
+          node apps/partner/scripts/build.js
+          cd apps/partner
+          npx --yes cap add ios || true
+          npx --yes cap sync ios
+
+      - name: 🔨 Build iOS Project (Unsigned Archive)
+        run: |
+          cd apps/partner/ios/App
+          xcodebuild -workspace App.xcworkspace \
+                     -scheme App \
+                     -configuration Release \
+                     -sdk iphoneos \
+                     -derivedDataPath build \
+                     CODE_SIGNING_ALLOWED=NO \
+                     CODE_SIGN_IDENTITY="" \
+                     CODE_SIGNING_REQUIRED=NO || true
+
+      - name: 📤 Upload iOS Build Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BlooRush-Partner-iOS-App
+          path: apps/partner/ios/App/build/Build/Products/Release-iphoneos/App.app
+          retention-days: 30

@@ -2231,7 +2231,8 @@ async function payViaWebhook(b){
   };
   let data;
   try{
-    const res = await fetch("/.netlify/functions/create-order",{ method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ jobId, amount: Math.round(b.payable*100), payload }) });
+    const apiEndpoint = (location.protocol === 'file:' || (location.hostname === 'localhost' && window.Capacitor)) ? "https://bloorush.in/api/create-order" : "/api/create-order";
+    const res = await fetch(apiEndpoint,{ method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ jobId, amount: Math.round(b.payable*100), payload }) });
     data = await res.json();
     if(!data.order_id) throw new Error(data.error||"could not start payment");
   }catch(e){ btn.disabled=false; alert("Could not start secure payment. Please try again.\n"+(e.message||"")); return; }

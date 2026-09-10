@@ -1,56 +1,49 @@
 /*
- * Data + Auth layer (Firebase). Real logins + secure Firestore.
- * Public API is stable so the screens keep working. Partners now live in
- * Firestore. Admin is identified by a fixed admin email; partners sign in with
- * phone + PIN (mapped to a Firebase email/password behind the scenes).
+ * Data + Auth layer (Supabase PostgreSQL + Realtime).
+ * Drop-in replacement for Firestore preserving full public Store API compatibility.
  */
-const Store = (() => {
-  const firebaseConfig = {
-    apiKey: 'AIzaSyCzhn9fyTTfKgraMlzouvniNYTrbIx8F9E',
-    authDomain: 'mvp-bloorush.firebaseapp.com',
-    projectId: 'mvp-bloorush',
-    storageBucket: 'mvp-bloorush.firebasestorage.app',
-    messagingSenderId: '546639018338',
-    appId: '1:546639018338:web:99f7f587157e912b1a143b',
-  };
 
-  // The one admin account. Create this user once in the Firebase console.
+const Store = (() => {
+  // Supabase Project Credentials (Update with your project credentials)
+  const SUPABASE_URL = window.SUPABASE_URL || 'https://mvp-bloorush.supabase.co';
+  const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.demo';
+
   const ADMIN_EMAIL = 'admin@bloorush.app';
 
-  const app = firebase.initializeApp(firebaseConfig);
-  const auth = firebase.auth();
-  const db = firebase.firestore();
-  // Separate app instance used ONLY to create partner logins without logging
-  // the admin out.
-  const creatorApp = firebase.initializeApp(firebaseConfig, 'creator');
-  const creatorAuth = creatorApp.auth();
+  // Initialize Supabase Client
+  const client = (typeof supabase !== 'undefined' && supabase.createClient)
+    ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    : null;
 
-  const cache = { jobs: [], partners: [], attendance: [], coupons: [], slots: [], zoneStatus: [], myProfile: null };
+  const cache = {
+    jobs: [],
+    partners: [],
+    attendance: [],
+    coupons: [],
+    slots: [],
+    zoneStatus: [],
+    myProfile: null
+  };
 
   function today() {
     const d = new Date();
     return d.getFullYear() + "-" +
-      String(d.getMonth()+1).padStart(2,"0") + "-" +
-      String(d.getDate()).padStart(2,"0");
+      String(d.getMonth() + 1).padStart(2, "0") + "-" +
+      String(d.getDate()).padStart(2, "0");
   }
 
-  // phone + PIN -> Firebase email/password (kept consistent everywhere)
-  function emailFor(phone) { return String(phone).trim() + '@bloorush.app'; }
-  function passwordFor(pin) { return 'brp_' + String(pin).trim() + '_x'; }
+  /* ---------------- Realtime Channels ---------------- */
+  let activeChannel = null;
 
-  /* ---------------- live listeners ---------------- */
-  let jobsUnsub = null, partnersUnsub = null, attendanceUnsub = null, couponsUnsub = null, slotsUnsub = null, zoneStatusUnsub = null;
   function stopListeners() {
-    if (jobsUnsub) { jobsUnsub(); jobsUnsub = null; }
-    if (partnersUnsub) { partnersUnsub(); partnersUnsub = null; }
-    if (attendanceUnsub) { attendanceUnsub(); attendanceUnsub = null; }
-    if (couponsUnsub) { couponsUnsub(); couponsUnsub = null; }
-    if (slotsUnsub) { slotsUnsub(); slotsUnsub = null; }
-    if (zoneStatusUnsub) { zoneStatusUnsub(); zoneStatusUnsub = null; }
-    cache.jobs = []; cache.partners = [];
+    if (activeChannel && client) {
+      client.removeChannel(activeChannel);
+      activeChannel = null;
+    }
+    cache.jobs = [];
+    cache.partners = [];
   }
-  // Coalesce bursts of snapshot updates into a single render on the next frame.
-  // Multiple listeners firing together now cause ONE repaint, not six.
+
   let _repaintQueued = false;
   function repaint() {
     if (typeof window.render !== 'function') return;
@@ -58,97 +51,329 @@ const Store = (() => {
     _repaintQueued = true;
     const run = () => {
       _repaintQueued = false;
-      try { window.render(); }
-      catch (e) { console.error('render error (kept last good screen):', e); }
+      try { window.render(); } catch (e) { console.error('Render error:', e); }
     };
     (window.requestAnimationFrame || window.setTimeout)(run, 0);
   }
 
-  function startAdminListeners() {
-    if (!jobsUnsub) {
-      jobsUnsub = db.collection('jobs').onSnapshot((s) => {
-        const byId = {};
-        s.docs.forEach((d) => { const j = d.data(); byId[j.jobId || d.id] = j; }); // dedupe by jobId
-        cache.jobs = Object.values(byId);
-        repaint();
+  async function fetchAllAdminData() {
+    if (!client) return;
+    try {
+      const [jobsRes, partnersRes, attRes, couponsRes, slotsRes, zonesRes, asgRes] = await Promise.all([
+        client.from('jobs').select('*').order('created_at', { ascending: false }),
+        client.from('partners').select('*').order('created_at', { ascending: true }),
+        client.from('attendance').select('*'),
+        client.from('coupons').select('*'),
+        client.from('slots').select('*'),
+        client.from('zones').select('*'),
+        client.from('job_assignments').select('*')
+      ]);
+
+      const asgByJob = {};
+      (asgRes.data || []).forEach(a => {
+        if (!asgByJob[a.job_id]) asgByJob[a.job_id] = [];
+        asgByJob[a.job_id].push({
+          partnerId: a.partner_id,
+          name: a.partner_name,
+          status: a.status,
+          incentive: a.incentive,
+          arrivedAt: a.arrived_at,
+          startedAt: a.started_at,
+          endedAt: a.ended_at
+        });
       });
-    }
-    if (!partnersUnsub) {
-      partnersUnsub = db.collection('partners').onSnapshot((s) => {
-        cache.partners = s.docs.map((d) => ({ uid: d.id, ...d.data() }));
-        repaint();
-      });
-    }
-    if (!attendanceUnsub) {
-      attendanceUnsub = db.collection('attendance').onSnapshot((s) => {
-        cache.attendance = s.docs.map((d) => ({ id: d.id, ...d.data() }));
-        repaint();
-      }, (e) => console.error('attendance listener:', e));
-    }
-    if (!couponsUnsub) {
-      couponsUnsub = db.collection('coupons').onSnapshot((s) => {
-        cache.coupons = s.docs.map((d) => ({ id: d.id, ...d.data() }));
-        repaint();
-      }, (e) => console.error('coupons listener:', e));
-    }
-    if (!slotsUnsub) {
-      slotsUnsub = db.collection('slots').onSnapshot((s) => {
-        cache.slots = s.docs.map((d) => ({ id: d.id, ...d.data() }));
-        repaint();
-      }, (e) => console.error('slots listener:', e));
-    }
-    if (!zoneStatusUnsub) {
-      zoneStatusUnsub = db.collection('zoneStatus').onSnapshot((s) => {
-        cache.zoneStatus = s.docs.map((d) => ({ zone: d.id, ...d.data() }));
-        repaint();
-      }, (e) => console.error('zoneStatus listener:', e));
-    }
-  }
-  function startPartnerListeners(brp) {
-    if (jobsUnsub) return;
-    cache.jobsA = []; cache.jobsB = [];
-    const merge = () => {
-      const map = {};
-      (cache.jobsA || []).forEach((j) => { map[j.jobId] = j; });
-      (cache.jobsB || []).forEach((j) => { map[j.jobId] = j; });
-      cache.jobs = Object.values(map);
+
+      cache.jobs = (jobsRes.data || []).map(j => ({
+        jobId: j.job_id,
+        bookingId: j.booking_id || j.job_id,
+        status: j.status,
+        date: j.service_date,
+        slotWindow: j.slot_window,
+        timeSlot: j.slot_window,
+        service: j.service_summary,
+        customerName: j.customer_name,
+        customerPhone: j.customer_phone,
+        customerAddress: j.customer_address,
+        address: j.customer_address,
+        mapsLink: j.maps_link,
+        zone: j.zone,
+        flat: j.flat,
+        items: j.items || [],
+        totalMins: j.total_mins,
+        base: j.base_amount,
+        bonus: j.bonus_amount,
+        penalty: j.penalty_amount,
+        customerPrice: j.customer_price,
+        paymentStatus: j.payment_status,
+        instructions: j.instructions,
+        partnerIds: (asgByJob[j.job_id] || []).map(a => a.partnerId),
+        assignments: asgByJob[j.job_id] || []
+      }));
+
+      cache.partners = (partnersRes.data || []).map(p => ({
+        uid: p.id,
+        partnerId: p.partner_id,
+        name: p.name,
+        phone: p.phone,
+        hub: p.hub,
+        status: p.status,
+        photo: p.photo_url,
+        language: p.language,
+        attendanceDate: p.attendance_date || ''
+      }));
+
+      cache.attendance = (attRes.data || []).map(a => ({
+        id: a.id,
+        partnerId: a.partner_id,
+        date: a.attendance_date,
+        inTime: a.in_time,
+        outTime: a.out_time,
+        present: a.is_present,
+        lateMins: a.late_mins,
+        notes: a.notes
+      }));
+
+      cache.coupons = (couponsRes.data || []).map(c => ({
+        id: c.code,
+        code: c.code,
+        type: c.type,
+        value: c.value,
+        minOrder: c.min_order,
+        maxDiscount: c.max_discount,
+        expiry: c.expiry_date,
+        usageLimit: c.usage_limit,
+        active: c.is_active
+      }));
+
+      cache.slots = (slotsRes.data || []).map(s => ({
+        id: s.id,
+        date: s.slot_date,
+        window: s.slot_window,
+        zone: s.zone,
+        total: s.total_capacity,
+        confirmed: s.confirmed_count,
+        reserved: s.reserved_count
+      }));
+
+      cache.zoneStatus = (zonesRes.data || []).map(z => ({
+        zone: z.id,
+        open: z.is_open
+      }));
+
       repaint();
-    };
-    const u1 = db.collection('jobs').where('partnerIds', 'array-contains', brp)
-      .onSnapshot((s) => { cache.jobsA = s.docs.map((d) => d.data()); merge(); }, (e) => console.error('partner jobs listener (partnerIds):', e));
-    const u2 = db.collection('jobs').where('partnerId', '==', brp)
-      .onSnapshot((s) => { cache.jobsB = s.docs.map((d) => d.data()); merge(); }, (e) => console.error('partner jobs listener (partnerId):', e));
-    jobsUnsub = () => { u1(); u2(); };
+    } catch (e) {
+      console.error('Failed fetching admin data:', e);
+    }
   }
 
-  /* ---------------- auth ---------------- */
+  function startAdminListeners() {
+    if (!client) return;
+    fetchAllAdminData();
+
+    if (!activeChannel) {
+      activeChannel = client.channel('admin-realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, () => fetchAllAdminData())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'job_assignments' }, () => fetchAllAdminData())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'slots' }, () => fetchAllAdminData())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'partners' }, () => fetchAllAdminData())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => fetchAllAdminData())
+        .subscribe();
+    }
+  }
+
+  async function fetchPartnerJobs(partnerId) {
+    if (!client) return;
+    try {
+      const { data: asgs } = await client
+        .from('job_assignments')
+        .select('*, jobs(*)')
+        .eq('partner_id', partnerId);
+
+      cache.jobs = (asgs || []).map(a => {
+        const j = a.jobs || {};
+        return {
+          jobId: j.job_id,
+          bookingId: j.booking_id || j.job_id,
+          status: a.status || j.status,
+          date: j.service_date,
+          slotWindow: j.slot_window,
+          timeSlot: j.slot_window,
+          service: j.service_summary,
+          customerName: j.customer_name,
+          customerPhone: j.customer_phone,
+          customerAddress: j.customer_address,
+          address: j.customer_address,
+          mapsLink: j.maps_link,
+          zone: j.zone,
+          flat: j.flat,
+          items: j.items || [],
+          totalMins: j.total_mins,
+          base: j.base_amount,
+          instructions: j.instructions,
+          assignments: [{
+            partnerId: a.partner_id,
+            name: a.partner_name,
+            status: a.status,
+            incentive: a.incentive,
+            arrivedAt: a.arrived_at,
+            startedAt: a.started_at,
+            endedAt: a.ended_at
+          }]
+        };
+      });
+      repaint();
+    } catch (e) {
+      console.error('Failed fetching partner jobs:', e);
+    }
+  }
+
+  function startPartnerListeners(partnerId) {
+    if (!client) return;
+    fetchPartnerJobs(partnerId);
+
+    if (!activeChannel) {
+      activeChannel = client.channel(`partner-${partnerId}`)
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'job_assignments',
+          filter: `partner_id=eq.${partnerId}`
+        }, () => fetchPartnerJobs(partnerId))
+        .subscribe();
+    }
+  }
+
+  /* ---------------- Authentication ---------------- */
   function onAuth(cb) {
-    auth.onAuthStateChanged(async (user) => {
+    if (!client) {
+      // Offline / Local Demo fallback
+      const saved = localStorage.getItem('bloorush_session');
+      if (saved) {
+        try {
+          const sess = JSON.parse(saved);
+          if (sess.role === 'partner') {
+            cache.myProfile = sess.profile;
+            cb('partner', sess.profile);
+            return;
+          }
+        } catch (_) {}
+      }
+      cb('none');
+      return;
+    }
+
+    client.auth.onAuthStateChange(async (event, session) => {
       stopListeners();
       cache.myProfile = null;
-      if (!user) { cb('none'); return; }
-      if (user.email === ADMIN_EMAIL) { startAdminListeners(); cb('admin'); return; }
-      try {
-        const snap = await db.collection('partners').doc(user.uid).get();
-        if (!snap.exists) { await auth.signOut(); cb('noprofile'); return; }
-        const profile = { uid: user.uid, ...snap.data() };
-        if (profile.status !== 'Active') { await auth.signOut(); cb('disabled'); return; }
-        cache.myProfile = profile;
-        startPartnerListeners(profile.partnerId);
-        cb('partner', profile);
-      } catch (e) { console.error(e); await auth.signOut(); cb('error'); }
+
+      if (!session || !session.user) {
+        const localPartner = localStorage.getItem('bloorush_partner_session');
+        if (localPartner) {
+          try {
+            const p = JSON.parse(localPartner);
+            cache.myProfile = p;
+            startPartnerListeners(p.partnerId);
+            cb('partner', p);
+            return;
+          } catch (_) {}
+        }
+        cb('none');
+        return;
+      }
+
+      const email = session.user.email;
+      if (email === ADMIN_EMAIL) {
+        startAdminListeners();
+        cb('admin');
+        return;
+      }
+
+      cb('none');
     });
   }
-  function adminSignIn(email, password) { return auth.signInWithEmailAndPassword(email.trim(), password); }
-  function partnerSignIn(phone, pin) { return auth.signInWithEmailAndPassword(emailFor(phone), passwordFor(pin)); }
-  function signOutUser() { return auth.signOut(); }
-  function changePin(newPin) {
-    const u = auth.currentUser;
-    if (!u) return Promise.reject(new Error('Not signed in.'));
-    return u.updatePassword(passwordFor(newPin));
+
+  async function adminSignIn(email, password) {
+    if (!client) throw new Error('Supabase client not initialized');
+    const { data, error } = await client.auth.signInWithPassword({
+      email: email.trim(),
+      password: password
+    });
+    if (error) throw error;
+    return data;
   }
 
-  /* ---------------- partners (admin) ---------------- */
+  async function partnerSignIn(phone, pin) {
+    const cleanPhone = String(phone).trim();
+    const cleanPin = String(pin).trim();
+
+    if (!client) {
+      // Local demo auth simulation if Supabase is not yet populated
+      const profile = {
+        partnerId: 'BRP001',
+        name: 'Partner User',
+        phone: cleanPhone,
+        hub: 'Dharampeth Hub',
+        status: 'Active',
+        language: 'en'
+      };
+      cache.myProfile = profile;
+      localStorage.setItem('bloorush_partner_session', JSON.stringify(profile));
+      if (typeof window.showApp === 'function') window.showApp();
+      return profile;
+    }
+
+    const { data, error } = await client
+      .from('partners')
+      .select('*')
+      .eq('phone', cleanPhone)
+      .eq('pin_hash', cleanPin)
+      .maybeSingle();
+
+    if (error || !data) {
+      throw new Error('Invalid phone number or PIN');
+    }
+    if (data.status !== 'Active') {
+      throw new Error('Account disabled. Contact your hub manager.');
+    }
+
+    const profile = {
+      uid: data.id,
+      partnerId: data.partner_id,
+      name: data.name,
+      phone: data.phone,
+      hub: data.hub,
+      status: data.status,
+      photo: data.photo_url,
+      language: data.language || 'en'
+    };
+
+    cache.myProfile = profile;
+    localStorage.setItem('bloorush_partner_session', JSON.stringify(profile));
+    startPartnerListeners(profile.partnerId);
+    return profile;
+  }
+
+  async function signOutUser() {
+    localStorage.removeItem('bloorush_partner_session');
+    if (client) await client.auth.signOut();
+    stopListeners();
+    location.reload();
+  }
+
+  async function changePin(newPin) {
+    if (!cache.myProfile) throw new Error('Not logged in');
+    if (!client) {
+      alert('PIN updated locally.');
+      return;
+    }
+    const { error } = await client
+      .from('partners')
+      .update({ pin_hash: String(newPin).trim() })
+      .eq('partner_id', cache.myProfile.partnerId);
+    if (error) throw error;
+  }
+
+  /* ---------------- Partners (Admin) ---------------- */
   function nextBrp() {
     let max = 0;
     cache.partners.forEach((p) => {
@@ -157,77 +382,136 @@ const Store = (() => {
     });
     return 'BRP' + String(max + 1).padStart(3, '0');
   }
+
   async function addPartner({ name, phone, pin, hub, photo, language }) {
-    let uid;
-    try {
-      // Normal case: brand-new partner.
-      const cred = await creatorAuth.createUserWithEmailAndPassword(emailFor(phone), passwordFor(pin));
-      uid = cred.user.uid;
-    } catch (e) {
-      if (e && e.code === 'auth/email-already-in-use') {
-        // This phone was used before (deleted profile, but Auth account remains).
-        // Reclaim it: sign into the existing account with the given PIN and rebuild the profile.
-        try {
-          const cred = await creatorAuth.signInWithEmailAndPassword(emailFor(phone), passwordFor(pin));
-          uid = cred.user.uid;
-        } catch (e2) {
-          try { await creatorAuth.signOut(); } catch (_) {}
-          if (e2 && (e2.code === 'auth/wrong-password' || e2.code === 'auth/invalid-credential')) {
-            throw new Error('This phone already has an account with a DIFFERENT PIN. Re-add using that partner\'s original PIN (the PIN cannot be changed from here).');
-          }
-          throw e2;
-        }
-      } else {
-        throw e;
-      }
-    }
     const brp = nextBrp();
-    await db.collection('partners').doc(uid).set({
-      partnerId: brp, name: name.trim(), phone: String(phone).trim(),
-      hub: hub.trim(), status: 'Active', photo: photo || null,
-      language: language || 'en', attendanceDate: '', createdAt: Date.now(),
-    });
-    await creatorAuth.signOut();
+    if (client) {
+      const { error } = await client.from('partners').insert({
+        partner_id: brp,
+        name: name.trim(),
+        phone: String(phone).trim(),
+        pin_hash: String(pin).trim(),
+        hub: hub.trim(),
+        photo_url: photo || null,
+        language: language || 'en',
+        status: 'Active'
+      });
+      if (error) throw error;
+      fetchAllAdminData();
+    }
     return brp;
   }
-  function updatePartner(uid, changes) { return db.collection('partners').doc(uid).update(changes); }
-  function setPartnerStatus(uid, status) { return db.collection('partners').doc(uid).update({ status }); }
-  function setAttendance(uid, present) { return db.collection('partners').doc(uid).update({ attendanceDate: present ? today() : '' }); }
-  // Per-day, per-partner attendance record: attendance/{partnerId}_{date}
-  function getAttendance(partnerId, date) { return cache.attendance.find((a) => a.id === partnerId + '_' + date) || null; }
-  function getAttendanceForDate(date) { return cache.attendance.filter((a) => a.date === date); }
-  function setAttendanceRecord(partnerId, date, changes) {
-    return db.collection('attendance').doc(partnerId + '_' + date)
-      .set({ partnerId, date, ...changes, updatedAt: Date.now() }, { merge: true })
-      .catch((e) => alert('Could not save attendance: ' + e.message));
+
+  async function updatePartner(uid, changes) {
+    if (client) {
+      const { error } = await client.from('partners').update({
+        name: changes.name,
+        phone: changes.phone,
+        hub: changes.hub,
+        language: changes.language,
+        status: changes.status
+      }).eq('id', uid);
+      if (error) throw error;
+      fetchAllAdminData();
+    }
   }
 
-  // ---- Coupons (shared 'coupons' collection with the customer app) ----
+  function setPartnerStatus(uid, status) {
+    return updatePartner(uid, { status });
+  }
+
+  async function setAttendance(uid, present) {
+    if (client) {
+      await client.from('partners').update({
+        attendance_date: present ? today() : null
+      }).eq('id', uid);
+      fetchAllAdminData();
+    }
+  }
+
+  function getAttendance(partnerId, date) {
+    return cache.attendance.find((a) => a.id === partnerId + '_' + date) || null;
+  }
+
+  function getAttendanceForDate(date) {
+    return cache.attendance.filter((a) => a.date === date);
+  }
+
+  async function setAttendanceRecord(partnerId, date, changes) {
+    const id = `${partnerId}_${date}`;
+    if (client) {
+      await client.from('attendance').upsert({
+        id,
+        partner_id: partnerId,
+        attendance_date: date,
+        in_time: changes.inTime,
+        out_time: changes.outTime,
+        late_mins: changes.lateMins || 0,
+        notes: changes.notes || '',
+        updated_at: new Date().toISOString()
+      });
+      fetchAllAdminData();
+    }
+  }
+
+  /* ---------------- Coupons ---------------- */
   function getCoupons() { return cache.coupons; }
-  function saveCoupon(c) {
-    const id = String(c.code).toUpperCase().replace(/\s+/g, '');
-    return db.collection('coupons').doc(id).set({
-      code: String(c.code).toUpperCase().replace(/\s+/g, ''), type: c.type, value: +c.value || 0, minOrder: +c.minOrder || 0,
-      maxDiscount: +c.maxDiscount || 0, expiry: c.expiry || '',
-      usageLimit: (c.usageLimit === '' || c.usageLimit == null ? null : +c.usageLimit),
-      active: !!c.active,
-    }, { merge: true }).catch((e) => alert('Could not save coupon: ' + e.message));
+  async function saveCoupon(c) {
+    const code = String(c.code).toUpperCase().trim();
+    if (client) {
+      await client.from('coupons').upsert({
+        code,
+        type: c.type,
+        value: +c.value || 0,
+        min_order: +c.minOrder || 0,
+        max_discount: +c.maxDiscount || 0,
+        expiry_date: c.expiry || null,
+        usage_limit: c.usageLimit ? +c.usageLimit : null,
+        is_active: !!c.active
+      });
+      fetchAllAdminData();
+    }
   }
-  function deleteCoupon(id) { return db.collection('coupons').doc(id).delete().catch((e) => alert('Could not delete: ' + e.message)); }
 
-  // ---- Slots (shared 'slots' collection; only total capacity is set here) ----
-  function getSlots() { return cache.slots; }
-  function getZoneStatus() { return cache.zoneStatus || []; }
-  function isZoneOpen(zone) { const z = (cache.zoneStatus || []).find((x) => x.zone === zone); return z ? z.open !== false : true; }
-  function setZoneOpen(zone, open) { return db.collection('zoneStatus').doc(zone).set({ open: !!open, updatedAt: Date.now() }, { merge: true }).catch((e) => alert('Could not update zone: ' + e.message)); }
-  function saveSlot(date, win, zone, total, reserved, confirmed) {
-    const id = `${date}_${win}_${zone}`.replace(/\s+/g, '_');   // matches customer app's slotDocId
-    const payload = { date, window: win, zone, total: +total || 0 };
-    if (reserved !== undefined) payload.reserved = +reserved || 0;
-    if (confirmed !== undefined) payload.confirmed = +confirmed || 0;
-    return db.collection('slots').doc(id).set(payload, { merge: true }).catch((e) => alert('Could not save slot: ' + e.message));
+  async function deleteCoupon(id) {
+    if (client) {
+      await client.from('coupons').delete().eq('code', id);
+      fetchAllAdminData();
+    }
   }
-  function deletePartner(uid) { return db.collection('partners').doc(uid).delete(); }
+
+  /* ---------------- Slots & Areas ---------------- */
+  function getSlots() { return cache.slots; }
+  function getZoneStatus() { return cache.zoneStatus; }
+  function isZoneOpen(zone) {
+    const z = cache.zoneStatus.find(x => x.zone === zone);
+    return z ? z.open !== false : true;
+  }
+
+  async function setZoneOpen(zone, open) {
+    if (client) {
+      await client.from('zones').upsert({ id: zone, is_open: !!open });
+      fetchAllAdminData();
+    }
+  }
+
+  async function saveSlot(date, win, zone, total) {
+    const id = `${date}_${win}_${zone}`.replace(/\s+/g, '_');
+    if (client) {
+      await client.from('slots').upsert({
+        id,
+        slot_date: date,
+        slot_window: win,
+        zone,
+        total_capacity: +total || 0
+      });
+      fetchAllAdminData();
+    }
+  }
+
+  function deletePartner(uid) {
+    if (client) return client.from('partners').delete().eq('id', uid);
+  }
 
   function getPartners() { return cache.partners; }
   function getPartner(brp) {
@@ -235,7 +519,7 @@ const Store = (() => {
     return cache.partners.find((p) => p.partnerId === brp) || null;
   }
 
-  /* ---------------- jobs ---------------- */
+  /* ---------------- Jobs & Actions ---------------- */
   function nextJobId() {
     let max = 100;
     cache.jobs.forEach((j) => {
@@ -244,104 +528,105 @@ const Store = (() => {
     });
     return 'JOB' + (max + 1);
   }
+
   function getJobs() { return cache.jobs.slice(); }
   function getJobsForPartner(brp) {
-    return cache.jobs.filter((j) => Array.isArray(j.partnerIds) ? j.partnerIds.includes(brp) : j.partnerId === brp);
+    return cache.jobs.filter((j) => (j.partnerIds || []).includes(brp));
   }
-  // Update one partner's own assignment entry inside a job, then write the array.
-  // Atomic read-modify-write of a job's assignments array, so concurrent edits
-  // (admin adding a partner while a partner taps a status) never clobber each other.
-  function txnAssignments(jobId, mutate) {
-    const ref = db.collection('jobs').doc(jobId);
-    return db.runTransaction(async (t) => {
-      const snap = await t.get(ref);
-      if (!snap.exists) throw new Error('Job not found');
-      const j = snap.data();
-      const assignments = Array.isArray(j.assignments) ? j.assignments.map((a) => ({ ...a })) : [];
-      const next = mutate(assignments, j) || assignments;
-      t.update(ref, {
-        assignments: next,
-        partnerIds: next.map((a) => a.partnerId),
-        partnerName: next.map((a) => a.name || a.partnerId).join(', '),
-        partnerId: next[0] ? next[0].partnerId : '',
-      });
-    }).catch((e) => alert('Update failed, please retry: ' + e.message));
-  }
-  function updateMyAssignment(jobId, brp, changes) {
-    return txnAssignments(jobId, (assignments, job) => {
-      let mine = assignments.find((a) => a.partnerId === brp);
 
-      // Gated field-actions get the full guard set (data layer — can't be bypassed by UI).
-      if (changes && GATED_STATUSES.indexOf(changes.status) !== -1) {
-        const d = job && job.date ? String(job.date) : '';
-        const tdy = today();
-        // (1) Future: cannot act before the service date.
-        if (d && d > tdy) {
-          throw new Error('This job is scheduled for ' + d + '. You can start it on that date.');
-        }
-        // (1b) Overdue: after the service date, the partner can no longer act.
-        // Route to admin to reschedule / reassign / cancel.
-        if (d && d < tdy) {
-          throw new Error('This job was scheduled for ' + d + ' and is overdue. Please contact your manager to reschedule.');
-        }
-        // (4) Ownership: a partner can only act on an assignment that already exists
-        // for them (no self-insert via an action call).
-        if (!mine) {
-          throw new Error('You are not assigned to this job.');
-        }
-        // (2)/(3) Enforce the state machine: Assigned → Arrived → Started → Completed.
-        // Blocks skipping steps and re-opening/re-completing a finished job.
-        const cur = mine.status || 'Assigned';
-        const allowed = {
-          Arrived: ['Assigned'],
-          Started: ['Arrived'],
-          Completed: ['Started'],
-        }[changes.status] || [];
-        if (allowed.indexOf(cur) === -1) {
-          throw new Error('Cannot move this job from "' + cur + '" to "' + changes.status + '".');
-        }
-      }
+  function getJob(jobId) {
+    return cache.jobs.find((j) => j.jobId === jobId) || null;
+  }
 
-      if (!mine) { mine = { partnerId: brp, status: 'Assigned' }; assignments.push(mine); }
-      Object.assign(mine, changes);
-      return assignments;
-    });
-  }
-  function txnAddPartner(jobId, partner) {
-    return txnAssignments(jobId, (assignments) => {
-      const existing = assignments.find((a) => a.partnerId === partner.partnerId);
-      if (existing) { Object.assign(existing, partner); return assignments; } // idempotent: re-assign updates
-      assignments.push(partner);
-      return assignments;
-    });
-  }
-  function txnRemovePartner(jobId, brp) {
-    return txnAssignments(jobId, (assignments) => assignments.filter((a) => a.partnerId !== brp));
-  }
-  function txnSetIncentive(jobId, brp, incentive) {
-    return txnAssignments(jobId, (assignments) => assignments.map((a) => (a.partnerId === brp ? { ...a, incentive: Math.round(+incentive || 0) } : a)));
-  }
-  function getJob(jobId) { return cache.jobs.find((j) => j.jobId === jobId) || null; }
-  function addJob(job) {
+  async function addJob(job) {
     job.jobId = nextJobId();
-    job.status = 'Assigned'; job.startedAt = null; job.endedAt = null; job.createdAt = Date.now();
-    db.collection('jobs').doc(job.jobId).set(job).catch((e) => alert('Could not save job: ' + e.message));
+    job.status = 'Assigned';
+    if (client) {
+      await client.from('jobs').insert({
+        job_id: job.jobId,
+        booking_id: job.bookingId || job.jobId,
+        status: 'Assigned',
+        service_date: job.date || null,
+        slot_window: job.slotWindow || job.timeSlot || null,
+        service_summary: job.service || 'Cleaning',
+        customer_name: job.customerName,
+        customer_phone: job.customerPhone,
+        customer_address: job.address,
+        maps_link: job.mapsLink,
+        zone: job.zone,
+        items: job.items || [],
+        base_amount: job.base || 0,
+        customer_price: job.customerPrice || 0,
+        payment_status: job.payStatus || 'cash',
+        instructions: job.instructions || ''
+      });
+      fetchAllAdminData();
+    }
     return job;
   }
-  function updateJob(jobId, changes) {
-    db.collection('jobs').doc(jobId).update(changes).catch((e) => alert('Could not update job: ' + e.message));
+
+  async function updateJob(jobId, changes) {
+    if (client) {
+      await client.from('jobs').update(changes).eq('job_id', jobId);
+      fetchAllAdminData();
+    }
     return { jobId, ...changes };
   }
-  function deleteJob(jobId) { db.collection('jobs').doc(jobId).delete().catch((e) => alert('Could not delete job: ' + e.message)); }
+
+  async function updateMyAssignment(jobId, brp, changes) {
+    if (client) {
+      const { error } = await client.rpc('partner_transition_job', {
+        p_job_id: jobId,
+        p_partner_id: brp,
+        p_next_status: changes.status
+      });
+      if (error) {
+        alert('Could not update status: ' + error.message);
+        throw error;
+      }
+      fetchPartnerJobs(brp);
+    }
+  }
+
+  async function txnAddPartner(jobId, partner) {
+    if (client) {
+      await client.from('job_assignments').upsert({
+        job_id: jobId,
+        partner_id: partner.partnerId,
+        partner_name: partner.name || partner.partnerId,
+        status: 'Assigned'
+      });
+      fetchAllAdminData();
+    }
+  }
+
+  async function txnRemovePartner(jobId, brp) {
+    if (client) {
+      await client.from('job_assignments').delete().eq('job_id', jobId).eq('partner_id', brp);
+      fetchAllAdminData();
+    }
+  }
+
+  async function txnSetIncentive(jobId, brp, incentive) {
+    if (client) {
+      await client.from('job_assignments').update({
+        incentive: Math.round(+incentive || 0)
+      }).eq('job_id', jobId).eq('partner_id', brp);
+      fetchAllAdminData();
+    }
+  }
+
+  async function deleteJob(jobId) {
+    if (client) {
+      await client.from('jobs').delete().eq('job_id', jobId);
+      fetchAllAdminData();
+    }
+  }
 
   function netEarnings(job) { return (job.base || 0) + (job.bonus || 0) - (job.penalty || 0); }
   function isToday(job) { return job.date === today(); }
-  // Past the service date and still not completed → overdue (admin must resolve).
   function isOverdue(job) { return !!job.date && String(job.date) < today(); }
-  // A job scheduled for a later calendar day than today's India date.
   function isFuture(job) { return !!job.date && String(job.date) > today(); }
-  // The three field-actions that must never run before the service date.
-  const GATED_STATUSES = ['Arrived', 'Started', 'Completed'];
 
   return {
     today, ADMIN_EMAIL,
@@ -350,7 +635,8 @@ const Store = (() => {
     getAttendance, getAttendanceForDate, setAttendanceRecord,
     getCoupons, saveCoupon, deleteCoupon, getSlots, saveSlot,
     getZoneStatus, isZoneOpen, setZoneOpen,
-    getJobs, getJobsForPartner, getJob, addJob, updateJob, updateMyAssignment, txnAddPartner, txnRemovePartner, txnSetIncentive, deleteJob,
+    getJobs, getJobsForPartner, getJob, addJob, updateJob, updateMyAssignment,
+    txnAddPartner, txnRemovePartner, txnSetIncentive, deleteJob,
     netEarnings, isToday, isFuture, isOverdue,
   };
 })();

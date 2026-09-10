@@ -1,17 +1,30 @@
 # Node dependencies
 node_modules/
+apps/*/node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Vercel deployment cache
+.vercel
+
 # Mobile intermediate build outputs
 www/
+apps/*/www/
 android/app/build/
 android/build/
 android/.gradle/
+apps/*/android/app/build/
+apps/*/android/build/
+apps/*/android/.gradle/
 ios/App/build/
 ios/App/Pods/
 ios/App/Podfile.lock
+apps/*/ios/App/build/
+apps/*/ios/App/Pods/
+apps/*/ios/App/Podfile.lock
+*.apk
+*.aab
 
 # Environment variables & local secrets
 .env

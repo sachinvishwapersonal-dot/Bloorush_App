@@ -8,59 +8,154 @@
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
   <link rel="preconnect" href="https://mvp-bloorush.firebaseapp.com" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- LOGIN -->
-  <div id="login" class="wrap center">
-    <div class="brand" style="font-size:24px;margin-bottom:6px;">BlooRush</div>
-    <h1>Partner Login</h1>
-    <p class="sub">Enter your phone number and PIN.</p>
-    <label for="phone">Phone number</label>
-    <input id="phone" inputmode="tel" placeholder="9876500001" />
-    <label for="pin">PIN</label>
-    <input id="pin" type="password" inputmode="numeric" placeholder="••••" />
-    <div class="spacer"></div>
-    <button class="btn" onclick="doLogin()">Log in</button>
-    <div id="loginErr" class="err"></div>
+  <!-- PARTNER LOGIN (Dedicated Partner Only) -->
+  <div id="login" class="login-wrap">
+    <div class="login-card">
+      <div class="login-brand-badge">⚡</div>
+      <h1 class="login-title">Partner Login</h1>
+      <p class="login-sub">Enter your registered phone and PIN to access your daily jobs.</p>
+      
+      <div class="field-group">
+        <label for="phone">Phone Number</label>
+        <input id="phone" inputmode="tel" placeholder="e.g. 9876543210" maxlength="10" />
+      </div>
+
+      <div class="field-group">
+        <label for="pin">Security PIN</label>
+        <input id="pin" type="password" inputmode="numeric" placeholder="••••" maxlength="6" />
+      </div>
+
+      <button class="btn" style="margin-top:16px;" onclick="doLogin()">Sign In &amp; Start Shift</button>
+      <div id="loginErr" class="err"></div>
+
+      <p style="text-align:center;font-size:12px;color:var(--muted);margin-top:20px;">
+        Forgot PIN or need account help?<br>Contact your Hub Operations Manager.
+      </p>
+    </div>
   </div>
 
-  <!-- APP -->
+  <!-- PARTNER APP INTERFACE -->
   <div id="app" style="display:none;">
-    <div class="topbar">
-      <button class="linkbtn" onclick="toggleMenu()" style="font-size:20px;">☰</button>
-      <span class="brand" id="sectionTitle">My Jobs</span>
-      <button class="linkbtn" id="logoutBtn" onclick="logout()">Log out</button>
-    </div>
+    <!-- Modern Sticky Topbar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="partner-avatar" id="avatarLetter">P</div>
+        <div>
+          <div class="brand" style="font-size:16px;line-height:1.1;">BlooRush</div>
+          <div id="topbarHub" style="font-size:11px;color:var(--muted);font-weight:600;">Partner App</div>
+        </div>
+      </div>
 
-    <div id="menu" class="menu" style="display:none;">
-      <button id="navJobs" onclick="showSection('jobs')">📋 My Jobs</button>
-      <button id="navProfile" onclick="showSection('profile')">👤 Profile</button>
-    </div>
+      <div class="topbar-actions">
+        <select id="langSelect" class="lang-select" onchange="onLanguageChange(this.value)">
+          <option value="en">EN</option>
+          <option value="hi">हिंदी</option>
+          <option value="mr">मराठी</option>
+        </select>
+        <button class="linkbtn" onclick="logout()" title="Log out">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+        </button>
+      </div>
+    </header>
 
-    <div class="wrap">
+    <main class="wrap">
+      <!-- SECTION: JOBS / DASHBOARD -->
       <section id="sec-jobs">
-        <p class="sub" id="hello" style="margin-bottom:2px;"></p>
-        <h1 id="hubLabel"></h1>
-        <div class="spacer"></div>
-        <div class="grid" id="stats"></div>
-        <h2 id="jobsHeading">Your jobs today</h2>
+        <!-- Hero Partner Status Banner -->
+        <div class="partner-hero">
+          <div class="hero-top">
+            <div>
+              <div class="hero-greeting" id="heroGreeting">Welcome back 👋</div>
+              <div class="hero-name" id="heroName">Partner</div>
+            </div>
+            <div class="hub-badge" id="heroHubBadge">
+              <span>📍</span>
+              <span id="heroHubName">Hub</span>
+            </div>
+          </div>
+
+          <div class="hero-stats-row">
+            <div class="hero-stat-item">
+              <div class="k" id="lblHeroEarnings">Today's Earnings</div>
+              <div class="v" id="valHeroEarnings">₹0</div>
+            </div>
+            <div class="hero-stat-item">
+              <div class="k" id="lblHeroOrders">Completed Tasks</div>
+              <div class="v" id="valHeroOrders">0</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Summary Stats Grid -->
+        <div class="stat-grid" id="stats"></div>
+
+        <!-- Jobs List -->
+        <div class="section-header">
+          <h2 class="section-title" id="jobsHeading">Assigned Tasks</h2>
+          <button class="linkbtn" onclick="render()" style="font-size:12px;padding:4px 8px;">🔄 Refresh</button>
+        </div>
         <div id="jobs"></div>
       </section>
 
-      <section id="sec-profile" style="display:none;">
-        <h1 id="profileHeading">Profile</h1>
-        <div class="card" id="profileCard"></div>
-        <div class="spacer"></div>
-        <button class="btn secondary" id="changePinBtn" onclick="changePin()">Change PIN</button>
+      <!-- SECTION: EARNINGS -->
+      <section id="sec-earnings" style="display:none;">
+        <div class="section-header">
+          <h1 id="earningsHeading">Earnings Breakdown</h1>
+        </div>
+        <div class="card" id="earningsDetailCard"></div>
+        <div class="card">
+          <h2 style="margin-top:0;">Payment Schedule</h2>
+          <p class="sub" style="margin-bottom:0;font-size:13px;">
+            Weekly payouts are processed every Monday to your registered bank account via UPI/IMPS. For questions, contact your hub accounts lead.
+          </p>
+        </div>
       </section>
-    </div>
+
+      <!-- SECTION: PROFILE -->
+      <section id="sec-profile" style="display:none;">
+        <div class="section-header">
+          <h1 id="profileHeading">Partner Profile</h1>
+        </div>
+        
+        <div class="profile-card">
+          <div class="profile-avatar-large" id="profileBigAvatar">P</div>
+          <div class="profile-name" id="profileBigName">Partner Name</div>
+          <div class="profile-id" id="profileBigId">ID: BR-000</div>
+          
+          <div id="profileCard"></div>
+        </div>
+
+        <button class="btn secondary" id="changePinBtn" onclick="changePin()" style="margin-bottom:12px;">
+          🔑 Change Login PIN
+        </button>
+        <button class="btn secondary" onclick="logout()" style="color:var(--red);border-color:#fecaca;">
+          🚪 Log Out
+        </button>
+      </section>
+    </main>
+
+    <!-- Pinned Mobile Bottom Navigation Bar -->
+    <nav class="bottom-nav">
+      <button class="nav-item active" id="tabJobs" onclick="showSection('jobs')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
+        <span id="navTextJobs">Jobs</span>
+      </button>
+      <button class="nav-item" id="tabEarnings" onclick="showSection('earnings')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+        <span id="navTextEarnings">Earnings</span>
+      </button>
+      <button class="nav-item" id="tabProfile" onclick="showSection('profile')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+        <span id="navTextProfile">Profile</span>
+      </button>
+    </nav>
   </div>
 
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" defer></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" defer></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="data.js" defer></script>
   <script src="../mobile-bridge.js" defer></script>
   <script src="partner.js" defer></script>
