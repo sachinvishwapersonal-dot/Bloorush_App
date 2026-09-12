@@ -30,27 +30,33 @@ jobs:
           node-version: 22
           cache: 'npm'
 
-      - name: 📦 Install NPM Dependencies
+      - name: 📦 Install Root Dependencies
         run: npm install
 
-      - name: 🔄 Sync Web Assets to Android
+      - name: 📦 Install Client App Dependencies
         run: |
-          node scripts/build-mobile.js
-          npx --yes cap sync android
+          cd apps/client
+          npm install
+
+      - name: 🔄 Compile Web Assets & Sync Native Android
+        run: |
+          node apps/client/scripts/build.js
+          cd apps/client
+          npx cap sync android
 
       - name: 🔑 Make Gradlew Executable
-        run: chmod +x android/gradlew
+        run: chmod +x apps/client/android/gradlew
 
-      - name: 🔨 Compile Android Debug APK
+      - name: 🔨 Compile Client Android Debug APK
         run: |
-          cd android
+          cd apps/client/android
           ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: 📤 Upload Android APK Artifact
+      - name: 📤 Upload Client Android APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BlooRush-Android-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: BlooRush-Client-Android-APK
+          path: apps/client/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
   build-ios:
@@ -67,17 +73,20 @@ jobs:
           cache: 'npm'
 
       - name: 📦 Install Dependencies
-        run: npm install
+        run: |
+          npm install
+          cd apps/client && npm install
 
       - name: 📱 Add iOS Platform & Sync
         run: |
-          node scripts/build-mobile.js
+          node apps/client/scripts/build.js
+          cd apps/client
           npx --yes cap add ios || true
           npx --yes cap sync ios
 
       - name: 🔨 Build iOS Project (Unsigned Archive)
         run: |
-          cd ios/App
+          cd apps/client/ios/App
           xcodebuild -workspace App.xcworkspace \
                      -scheme App \
                      -configuration Release \
@@ -92,5 +101,5 @@ jobs:
         if: always()
         with:
           name: BlooRush-iOS-App
-          path: ios/App/build/Build/Products/Release-iphoneos/App.app
+          path: apps/client/ios/App/build/Build/Products/Release-iphoneos/App.app
           retention-days: 30

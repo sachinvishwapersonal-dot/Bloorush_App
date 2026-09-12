@@ -8,6 +8,7 @@
     "build:all": "npm run build:client && npm run build:partner",
     "cap:client:sync": "npm run build:client && cd apps/client && npx cap sync",
     "cap:partner:sync": "npm run build:partner && cd apps/partner && npx cap sync",
+    "sync:all": "npm run cap:client:sync && npm run cap:partner:sync",
     "cap:client:android": "npm run build:client && cd apps/client && npx cap open android",
     "cap:partner:android": "npm run build:partner && cd apps/partner && npx cap open android"
   },

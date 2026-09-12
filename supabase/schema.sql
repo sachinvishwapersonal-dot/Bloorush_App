@@ -316,3 +316,29 @@ INSERT INTO public.zones (id, is_open) VALUES
     ('Civil Lines', true),
     ('Sitabuldi', true)
 ON CONFLICT (id) DO NOTHING;
+
+-- 5. REGISTERED FIELD PARTNERS (Cleaners & Helpers)
+INSERT INTO public.partners (partner_id, name, phone, pin_hash, hub, status, language) VALUES
+    ('BRP001', 'Partner User', '9988776655', '1234', 'Dharampeth Hub', 'Active', 'en'),
+    ('BRP002', 'Sachin Vishwakarma', '9876500001', '1234', 'Dharampeth Hub', 'Active', 'en'),
+    ('BRP003', 'Ramesh Kumar', '9876543210', '1234', 'Besa Hub', 'Active', 'hi'),
+    ('BRP004', 'Rahul Sharma', '9876500002', '1234', 'Manish Nagar Hub', 'Active', 'mr')
+ON CONFLICT (partner_id) DO UPDATE SET
+    phone = EXCLUDED.phone,
+    pin_hash = EXCLUDED.pin_hash,
+    status = 'Active';
+
+-- 6. SAMPLE ACTIVE DISPATCH JOBS
+INSERT INTO public.jobs (
+    job_id, booking_id, status, service_date, slot_window, service_summary,
+    customer_name, customer_phone, customer_address, maps_link, zone, flat, payment_status, customer_price
+) VALUES (
+    'JOB101', 'BK-101', 'Assigned', CURRENT_DATE, '10:00 AM - 12:00 PM', 'Deep Bathroom & Kitchen Cleaning',
+    'Priya Sharma', '+91 98230 12345', 'Flat 402, Royal Palms, Dharampeth, Nagpur',
+    'https://maps.google.com/?q=21.1458,79.0882', 'Dharampeth', 'Flat 402', 'cash', 798
+) ON CONFLICT (job_id) DO NOTHING;
+
+INSERT INTO public.job_assignments (job_id, partner_id, partner_name, status, incentive) VALUES
+    ('JOB101', 'BRP001', 'Partner User', 'Assigned', 350)
+ON CONFLICT (job_id, partner_id) DO NOTHING;
+
