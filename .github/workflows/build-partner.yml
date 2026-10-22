@@ -31,9 +31,6 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: 📱 Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: 🟢 Setup Node.js 22
         uses: actions/setup-node@v4
         with:
@@ -41,12 +38,12 @@ jobs:
           cache: 'npm'
 
       - name: 📦 Install Root Dependencies
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: 📦 Install Partner App Dependencies
         run: |
           cd apps/partner
-          npm install
+          npm install --legacy-peer-deps
 
       - name: 🔄 Compile Web Assets & Sync Native Android
         run: |
@@ -84,8 +81,8 @@ jobs:
 
       - name: 📦 Install Dependencies
         run: |
-          npm install
-          cd apps/partner && npm install
+          npm install --legacy-peer-deps
+          cd apps/partner && npm install --legacy-peer-deps
 
       - name: 📱 Add iOS Platform & Sync
         run: |
