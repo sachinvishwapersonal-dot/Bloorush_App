@@ -7,6 +7,16 @@ let partnerPhoto = null;
 let selectedDate = null;
 let selectedServices = new Set();
 
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /* ---------- auth gate ---------- */
 Store.onAuth((role) => {
   if (role === 'admin') showApp();
@@ -288,14 +298,15 @@ function renderSlotZoneRows() {
     const total = s.total || 0, reserved = s.reserved || 0, confirmed = s.confirmed || 0;
     const avail = Math.max(0, total - reserved - confirmed);
     const zid = zone.replace(/\s+/g, '_');
+    const safeZone = escapeHtml(zone);
     return `<div class="card">
-      <div class="flex" style="justify-content:space-between;margin-bottom:8px"><b>${zone}</b><span class="badge ${avail > 0 ? 'green' : 'gray'}">${avail} available</span></div>
+      <div class="flex" style="justify-content:space-between;margin-bottom:8px"><b>${safeZone}</b><span class="badge ${avail > 0 ? 'green' : 'gray'}">${avail} available</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
         <div><label style="font-size:11px">Total</label><input type="number" min="0" id="st-${zid}" value="${total}" /></div>
         <div><label style="font-size:11px">Reserved</label><input type="number" min="0" id="sr-${zid}" value="${reserved}" /></div>
         <div><label style="font-size:11px">Confirmed</label><input type="number" min="0" id="sc-${zid}" value="${confirmed}" /></div>
       </div>
-      <button class="btn" style="margin-top:8px" onclick="saveZoneSlot('${zone.replace(/'/g, "\\'")}')">Save ${zone}</button>
+      <button class="btn" style="margin-top:8px" data-zone="${safeZone}" onclick="saveZoneSlot(this.getAttribute('data-zone'))">Save ${safeZone}</button>
     </div>`;
   }).join('');
 }
@@ -384,9 +395,10 @@ function renderAttendance() {
   const present = active.filter((p) => rec(p.partnerId).present).length;
   const late = active.filter((p) => rec(p.partnerId).late).length;
   const absent = active.length - present;
+  const safeD = escapeHtml(d);
   sum.innerHTML = `
     <div class="card">
-      <div class="line"><span class="k">📅 Date</span><span class="v">${d}</span></div>
+      <div class="line"><span class="k">📅 Date</span><span class="v">${safeD}</span></div>
       <div class="line"><span class="k">🟢 Present</span><span class="v">${present}</span></div>
       <div class="line"><span class="k">⚪ Absent</span><span class="v">${absent}</span></div>
       <div class="line"><span class="k">⏰ Late</span><span class="v">${late}</span></div>
@@ -480,11 +492,13 @@ function renderOps() {
     ['🆕 New orders', newOrders], ['📋 Pending Jobs', pending], ['🚗 In Progress', inProgress], ['✅ Completed', completed],
     ['💰 Revenue', money(revenue)], ['💵 Cash to Collect', money(cashToCollect)], ['👷 Partner Payout', money(payout)],
   ];
+  const safeLabel = escapeHtml(label);
+  const safeDate = escapeHtml(selectedDate);
   document.getElementById('ops').innerHTML = `
     <div class="card">
-      <div class="job-title" style="margin-bottom:2px;">${label}</div>
-      <div class="muted" style="margin-bottom:10px;">${selectedDate}</div>
-      ${rows.map(([k, v]) => `<div class="line"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('')}
+      <div class="job-title" style="margin-bottom:2px;">${safeLabel}</div>
+      <div class="muted" style="margin-bottom:10px;">${safeDate}</div>
+      ${rows.map(([k, v]) => `<div class="line"><span class="k">${escapeHtml(k)}</span><span class="v">${escapeHtml(v)}</span></div>`).join('')}
     </div>`;
 }
 
@@ -607,11 +621,12 @@ function renderDayJobs() {
   const m = dayMetrics(selectedDate);
   const strip = document.getElementById('dayCounts');
   if (strip) {
+    const safeDate = escapeHtml(selectedDate);
     strip.innerHTML =
       `<span class="daycount"><b>${m.scheduled}</b> scheduled</span>` +
       `<span class="daycount"><b>${m.completed}</b> completed</span>` +
       `<span class="daycount"><b>${m.cancelled}</b> cancelled</span>` +
-      `<span class="daycount daycount-note">service date ${selectedDate}</span>`;
+      `<span class="daycount daycount-note">service date ${safeDate}</span>`;
   }
   const jobs = jobsOnDate(selectedDate).slice().reverse();
   const el = document.getElementById('dayJobs');

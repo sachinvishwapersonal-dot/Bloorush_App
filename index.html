@@ -198,8 +198,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
-<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
-<link rel="preconnect" href="https://mvp-bloorush.firebaseapp.com" crossorigin>
 <link rel="dns-prefetch" href="https://checkout.razorpay.com">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
@@ -1045,281 +1043,24 @@
   </div>
 </div>
 
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
-  import {
-    getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, increment, deleteDoc,
-    query, where, onSnapshot
-  } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
-  import {
-    getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
-    signOut, onAuthStateChanged, setPersistence, browserLocalPersistence, indexedDBLocalPersistence, browserSessionPersistence
-  } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
-
-  // === Firebase project: mvp-bloorush ===
-  // authDomain is the SAME origin the app is served from (bloorush.com), with
-  // /__/auth/* proxied to Firebase in netlify.toml. This is required for
-  // signInWithRedirect to work on mobile browsers that block cross-domain storage.
-  const firebaseConfig = {
-    apiKey: "AIzaSyCzhn9fyTTfKgraMlzouvniNYTrbIx8F9E",
-    authDomain: "bloorush.in",
-    projectId: "mvp-bloorush",
-    storageBucket: "mvp-bloorush.firebasestorage.app",
-    messagingSenderId: "546639018338",
-    appId: "1:546639018338:web:99f7f587157e912b1a143b"
-  };
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-  const auth = getAuth(app);
-  // Ensure the auth session persists across the redirect round-trip on mobile.
-  // Fall back through storage types for browsers that block indexedDB/local.
-  let _persistenceMode = "none", _persistenceOk = false;
-  const _persistenceReady = setPersistence(auth, indexedDBLocalPersistence)
-    .then(()=>{ _persistenceMode="indexedDB"; _persistenceOk=true; })
-    .catch(()=> setPersistence(auth, browserLocalPersistence).then(()=>{ _persistenceMode="local"; _persistenceOk=true; }))
-    .catch(()=> setPersistence(auth, browserSessionPersistence).then(()=>{ _persistenceMode="session"; _persistenceOk=true; }))
-    .catch((e)=>{ _persistenceOk=false; console.error("[auth] persistence unavailable:", e && e.code, e && e.message, e && e.name); });
-
-  function slotDocId(date, win, zone){
-    return `${date}_${win}_${zone}`.replace(/\s+/g,"_");
-  }
-
-  async function fbLoadSlots(){
-    const snap = await getDocs(collection(db,"slots"));
-    const out = {};
-    snap.forEach(d=>{
-      const v = d.data();
-      out[`${v.date}|${v.window}|${v.zone}`] = { total:v.total||0, reserved:v.reserved||0, confirmed:v.confirmed||0 };
-    });
-    return out;
-  }
-  // Realtime slots: fires cb() with the full slots map on every admin change.
-  function fbWatchSlots(cb){
-    return onSnapshot(collection(db,"slots"), (snap)=>{
-      const out = {};
-      snap.forEach(d=>{ const v=d.data(); out[`${v.date}|${v.window}|${v.zone}`] = { total:v.total||0, reserved:v.reserved||0, confirmed:v.confirmed||0 }; });
-      cb(out);
-    }, (err)=>{ console.warn("slots listener error", err && err.code); });
-  }
-
-  // Which service areas are currently closed (admin-controlled).
-  async function fbLoadClosedZones(){
-    try{
-      const snap = await getDocs(collection(db,"zoneStatus"));
-      const closed = [];
-      snap.forEach(d=>{ if(d.data().open === false) closed.push(d.id); });
-      return closed;
-    }catch(e){ return []; }
-  }
-  // Live: fires whenever admin opens/closes an area, so it takes effect instantly.
-  function fbWatchClosedZones(cb){
-    return onSnapshot(collection(db,"zoneStatus"), (snap)=>{
-      const closed=[]; snap.forEach(d=>{ if(d.data().open === false) closed.push(d.id); });
-      cb(closed);
-    }, ()=>cb([]));
-  }
-
-  async function fbSaveSlot(date, win, zone, total, reserved, confirmed){
-    const id = slotDocId(date,win,zone);
-    await setDoc(doc(db,"slots",id), { date, window: win, zone, total:+total||0, reserved:+reserved||0, confirmed:+confirmed||0 });
-  }
-
-  async function fbIncrementConfirmed(date, win, zone){
-    const id = slotDocId(date,win,zone);
-    try{
-      await updateDoc(doc(db,"slots",id), { confirmed: increment(1) });
-    }catch(e){
-      // doc doesn't exist yet — create it with default capacity
-      await setDoc(doc(db,"slots",id), { date, window: win, zone, total:2, reserved:0, confirmed:1 });
-    }
-  }
-
-  async function fbEnsureWeek(dates, windows, zones, defaultCap){
-    const snap = await getDocs(collection(db,"slots"));
-    const existing = new Set();
-    snap.forEach(d=>existing.add(d.id));
-    const writes=[];
-    for(const date of dates) for(const win of windows) for(const zone of zones){
-      const id = slotDocId(date,win,zone);
-      if(!existing.has(id)){
-        writes.push(setDoc(doc(db,"slots",id), {date, window:win, zone, total:defaultCap, reserved:0, confirmed:0}));
-      }
-    }
-    await Promise.all(writes);
-    return writes.length;
-  }
-
-  async function fbLoadCoupons(){
-    const snap = await getDocs(collection(db,"coupons"));
-    const out = [];
-    snap.forEach(d=>{ out.push({ id:d.id, ...d.data() }); });
-    return out;
-  }
-  async function fbSaveCoupon(c){
-    // doc id = coupon code (uppercased, spaces stripped) so codes are unique
-    const id = String(c.code).toUpperCase().replace(/\s+/g,"_");
-    await setDoc(doc(db,"coupons",id), {
-      code:c.code, type:c.type, value:c.value||0, minOrder:c.minOrder||0,
-      maxDiscount:c.maxDiscount||0, expiry:c.expiry||"", usageLimit:(c.usageLimit==null?null:c.usageLimit),
-      active:!!c.active, used:c.used||0
-    });
-    return id;
-  }
-  async function fbDeleteCoupon(id){ await deleteDoc(doc(db,"coupons",id)); }
-
-  // Per-customer coupon redemption ledger. Doc id = uid__CODE, so a customer
-  // can redeem any given code at most once. Also bumps the coupon's global
-  // used count so quantity caps actually take effect.
-  async function fbCouponRedeemed(uid, code){
-    if(!uid || !code) return false;
-    try{ const s = await getDoc(doc(db,"redemptions", uid+"__"+String(code).toUpperCase())); return s.exists(); }
-    catch(e){ return false; }
-  }
-  async function fbRedeemCoupon(uid, code){
-    if(!uid || !code) return;
-    const CODE = String(code).toUpperCase();
-    try{ await setDoc(doc(db,"redemptions", uid+"__"+CODE), { uid, code:CODE, at:new Date().toISOString() }); }catch(e){}
-    try{ await updateDoc(doc(db,"coupons", CODE), { used: increment(1) }); }catch(e){}
-  }
-
-  async function fbSaveBooking(b){
-    // Online bookings use the jobId as the doc id — the SAME id the webhook
-    // writes — so one paid order produces exactly one bookings document.
-    const id = b.jobId || ((b.paymentId || "cash") + "_" + Date.now());
-    await setDoc(doc(db,"bookings",id), { ...b, createdAt: new Date().toISOString() }, { merge:true });
-    return id;
-  }
-
-  /* ===== CUSTOMER ACCOUNTS (Google sign-in) ===== */
-  async function authGoogle(){
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: "select_account" });
-    // Popup FIRST on all devices. Modern mobile/desktop browsers block the storage
-    // that signInWithRedirect needs ("storage-partitioned" error), so popup is now
-    // the reliable path. Redirect is kept ONLY as a fallback when a popup can't open
-    // (e.g. some in-app webviews).
-    try{
-      console.log("[auth] trying signInWithPopup");
-      const res = await signInWithPopup(auth, provider);
-      console.log("[auth] popup success:", res && res.user ? res.user.uid : null);
-      return res.user;
-    }catch(e){
-      console.error("[auth] popup failed:", e && e.code, e && e.message);
-      if(e && (e.code==="auth/popup-blocked" || e.code==="auth/cancelled-popup-request"
-          || e.code==="auth/operation-not-supported-in-this-environment"
-          || e.code==="auth/popup-closed-by-user")){
-        console.log("[auth] falling back to signInWithRedirect");
-        await signInWithRedirect(auth, provider);
-        return null; // completes via getRedirectResult on return
-      }
-      throw e;
-    }
-  }
-  function authSignOut(){ return signOut(auth); }
-  function authOnUser(cb){ return onAuthStateChanged(auth, cb); }
-  function authCurrentUser(){ return auth.currentUser; }
-
-  async function fbGetUser(uid){
-    // Returns null ONLY when the profile doc truly doesn't exist.
-    // A read failure (network/permission) throws, so callers never mistake it for "new user".
-    const s = await getDoc(doc(db,"users",uid));
-    return s.exists()? s.data() : null;
-  }
-  async function fbSaveUser(uid, data){
-    await setDoc(doc(db,"users",uid), { ...data, updatedAt:new Date().toISOString() }, { merge:true });
-  }
-  async function fbMyBookings(uid){
-    // Filter by uid only (no orderBy) so no composite index is needed; sort in JS.
-    const qy = query(collection(db,"bookings"), where("uid","==",uid));
-    const snap = await getDocs(qy);
-    const out = [];
-    snap.forEach(d=>out.push({ id:d.id, ...d.data() }));
-    out.sort((a,b)=> String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
-    return out;
-  }
-  async function fbRateBooking(id, rating){
-    await updateDoc(doc(db,"bookings",id), { rating:+rating, ratedAt:new Date().toISOString() });
-  }
-
-  // Monthly Helper subscription requests (request-only; team confirms on call).
-  async function fbSaveSubRequest(req){
-    const id = (req.uid||"anon") + "_" + Date.now();
-    await setDoc(doc(db,"subscriptions",id), { ...req, createdAt:new Date().toISOString() });
-    return id;
-  }
-  async function fbMySubs(uid){
-    const qy = query(collection(db,"subscriptions"), where("uid","==",uid));
-    const snap = await getDocs(qy); const out=[];
-    snap.forEach(d=>out.push({ id:d.id, ...d.data() }));
-    out.sort((a,b)=> (b.createdAt||"").localeCompare(a.createdAt||""));
-    return out;
-  }
-  async function fbCountReferrals(code){
-    if(!code) return 0;
-    try{ const qy=query(collection(db,"users"), where("referredBy","==",code)); const s=await getDocs(qy); return s.size; }
-    catch(e){ return 0; }
-  }
-
-  /* ===== ORDERS (shared with the partner app; collection: jobs) ===== */
-  async function fbCreateOrder(order){
-    // doc id == jobId. Written to the shared "jobs" collection the partner
-    // admin dashboard reads, so a paid booking shows up for assignment.
-    await setDoc(doc(db,"jobs", order.jobId), order, { merge:true });
-    return order.jobId;
-  }
-  function fbWatchOrder(jobId, cb){
-    // Realtime listener: fires whenever the partner/admin advances the status.
-    return onSnapshot(doc(db,"jobs", jobId), (snap)=> cb(snap.exists()? snap.data() : null), (err)=> cb(null));
-  }
-  async function fbMyOrders(uid){
-    const qy = query(collection(db,"jobs"), where("customerUid","==",uid));
-    const snap = await getDocs(qy); const out=[];
-    snap.forEach(d=>out.push({ id:d.id, ...d.data() }));
-    out.sort((a,b)=> (b.createdAt||0) - (a.createdAt||0));
-    return out;
-  }
-  async function fbRateOrder(jobId, rating, tags){
-    await updateDoc(doc(db,"jobs", jobId), { rating:+rating, reviewTags:(tags||[]), ratedAt:new Date().toISOString() });
-  }
-
-  // Complete any redirect-based sign-in when the page comes back.
-  let _redirectError = null;
-  console.log("REDIRECT AUTH CHECK START");
-  console.log("[auth] href:", window.location.href);
-  console.log("[auth] currentUser BEFORE getRedirectResult:", auth.currentUser ? auth.currentUser.uid : null);
-  const _redirectDone = _persistenceReady
-    .then(()=>{
-      console.log("[auth] setPersistence resolved:", _persistenceOk, "mode:", _persistenceMode);
-      return getRedirectResult(auth);
-    })
-    .then((result)=>{
-      console.log("[auth] getRedirectResult result.user:", result && result.user ? result.user.uid : null);
-      console.log("[auth] getRedirectResult has credential:", !!(result && result.credential));
-      console.log("[auth] currentUser AFTER getRedirectResult:", auth.currentUser ? auth.currentUser.uid : null);
-      console.log("REDIRECT AUTH CHECK END (no error)");
-      return result;
-    })
-    .catch(e=>{
-      _redirectError = e;
-      // Full safe error — never replaced with a generic string, no tokens.
-      console.error("[auth] getRedirectResult ERROR code:", e && e.code);
-      console.error("[auth] getRedirectResult ERROR message:", e && e.message);
-      console.error("[auth] getRedirectResult ERROR name:", e && e.name);
-      console.log("[auth] currentUser AFTER error:", auth.currentUser ? auth.currentUser.uid : null);
-      console.log("REDIRECT AUTH CHECK END (error)");
-    });
-  function authGetRedirectError(){ return _redirectDone.then(()=>_redirectError); }
-
-  window.bloorushFB = { fbLoadSlots, fbWatchSlots, fbLoadClosedZones, fbWatchClosedZones, fbSaveSlot, fbIncrementConfirmed, fbEnsureWeek, slotDocId, fbLoadCoupons, fbSaveCoupon, fbDeleteCoupon, fbSaveBooking, fbCouponRedeemed, fbRedeemCoupon, fbCreateOrder, fbWatchOrder, fbMyOrders, fbRateOrder };
-  window.bloorushAuth = { authGoogle, authSignOut, authOnUser, authCurrentUser, authGetRedirectError, fbGetUser, fbSaveUser, fbMyBookings, fbRateBooking, fbSaveSubRequest, fbMySubs, fbCountReferrals };
-
-</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-client.js"></script>
 
 <script>
 const cart = {};   // must be declared before any card rendering
 const cartQty = {};  // cartQty[id] = quantity for a tierQty service (default 1) — cardHTML reads cart[id]
 const addonQty = {};   // addonQty[id] = n — declared here so cardHTML can read it during first render
 let sheetSvc=null, sheetTier=0, sheetQty=1;
+
+function escapeHtml(str){
+  if(str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 /* ================= FOUNDER CONFIG ================= */
 /* ── Razorpay ── swap this one line to switch test <-> live.
@@ -1836,7 +1577,7 @@ function checkZoneOpen(){
   const zone=document.getElementById("coZone").value;
   const warn=document.getElementById("coLocWarn");
   if(zone && zoneIsClosed(zone)){
-    if(warn){ warn.style.display="block"; warn.innerHTML='🚫 We\'re not serving <b>'+zone+'</b> right now. Please pick another area or check back soon.'; }
+    if(warn){ warn.style.display="block"; warn.innerHTML='🚫 We\'re not serving <b>'+escapeHtml(zone)+'</b> right now. Please pick another area or check back soon.'; }
     return false;
   }
   return true;
@@ -1896,15 +1637,17 @@ function checkZoneAgainstLocation(){
   const detected = matched[0] || areaFromAddress(data);
   if(!detected) return;
   if(matched.length){
-    warn.innerHTML='📍 Your pin looks like <b>'+matched[0]+'</b>'+(selected?', not <b>'+selected+'</b>':'')+
-      '. <a href="#" id="coZoneFix" style="color:#0B7285;font-weight:800;text-decoration:underline">Switch to '+matched[0]+'</a>';
+    const safeMatched = escapeHtml(matched[0]);
+    const safeSelected = escapeHtml(selected);
+    warn.innerHTML='📍 Your pin looks like <b>'+safeMatched+'</b>'+(selected?', not <b>'+safeSelected+'</b>':'')+
+      '. <a href="#" id="coZoneFix" style="color:#0B7285;font-weight:800;text-decoration:underline">Switch to '+safeMatched+'</a>';
     warn.style.display="block";
     const fix=document.getElementById("coZoneFix");
     if(fix) fix.onclick=(e)=>{ e.preventDefault();
       const z=document.getElementById("coZone"); z.value=matched[0];
       z.dispatchEvent(new Event("change")); warn.style.display="none"; };
   } else {
-    warn.innerHTML='⚠️ This location looks like <b>'+detected+'</b>, which may be outside our service area. Please pick the correct area above, or choose “Other”.';
+    warn.innerHTML='⚠️ This location looks like <b>'+escapeHtml(detected)+'</b>, which may be outside our service area. Please pick the correct area above, or choose “Other”.';
     warn.style.display="block";
   }
 }
@@ -2043,8 +1786,15 @@ function recordBooking(b,paymentId,mode,fixedJobId){
   }catch(e){}
   try{
     const key="bloorush_bookings_backup";
+    const safeSummary = {
+      bookingId: record.bookingId,
+      date: record.date,
+      service: record.service,
+      customerPrice: record.customerPrice,
+      createdAt: record.createdAt
+    };
     const arr=JSON.parse(localStorage.getItem(key)||"[]");
-    arr.push(record); localStorage.setItem(key, JSON.stringify(arr.slice(-100)));
+    arr.push(safeSummary); localStorage.setItem(key, JSON.stringify(arr.slice(-100)));
   }catch(e){}
 
   // Firestore in the background. Never blocks anything.
@@ -2131,22 +1881,37 @@ function validateCheckout(){
   return b;
 }
 
-// Cash removed — online-only. Handler kept as a no-op so nothing else breaks.
-document.getElementById("coPayCash").addEventListener("click",()=>{});
+// Pay on Service (Cash) — Direct real-time booking written to Supabase
+document.getElementById("coPayCash").addEventListener("click",()=>{
+  const b=validateCheckout(); if(!b)return;
+  const jobId = "JOB"+Date.now();
+  const btn=document.getElementById("coPayCash");
+  if(btn){ btn.disabled=true; btn.textContent="Confirming…"; }
+  finishBooking(b, null, "cash", jobId);
+});
 
 /* ===== PENDING BOOKING RECOVERY =====
    Chrome/Safari often reload or discard the tab while the customer is inside the
    UPI app. When that happens Razorpay's handler never fires. So the booking is
    written to localStorage BEFORE checkout opens, and recovered afterwards. */
 const PENDING_KEY="bloorush_pending_booking";
+function encStorage(data){
+  try{ return btoa(encodeURIComponent(JSON.stringify(data))); }catch(e){ return null; }
+}
+function decStorage(raw){
+  try{ return JSON.parse(decodeURIComponent(atob(raw))); }catch(e){ return null; }
+}
 function savePending(b, jobId){
-  try{ localStorage.setItem(PENDING_KEY, JSON.stringify({b, jobId:jobId||null, at:Date.now()})); }catch(e){}
+  try{
+    const payload = encStorage({b, jobId:jobId||null, at:Date.now()});
+    if(payload) localStorage.setItem(PENDING_KEY, payload);
+  }catch(e){}
 }
 function clearPending(){ try{ localStorage.removeItem(PENDING_KEY); }catch(e){} }
 function getPending(){
   try{
     const raw=localStorage.getItem(PENDING_KEY); if(!raw) return null;
-    const p=JSON.parse(raw);
+    const p=decStorage(raw);
     if(!p || !p.b || (Date.now()-p.at) > 45*60*1000){ clearPending(); return null; }
     return p;
   }catch(e){ return null; }
@@ -2234,8 +1999,15 @@ async function payViaWebhook(b){
     const apiEndpoint = (location.protocol === 'file:' || (location.hostname === 'localhost' && window.Capacitor)) ? "https://bloorush.in/api/create-order" : "/api/create-order";
     const res = await fetch(apiEndpoint,{ method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ jobId, amount: Math.round(b.payable*100), payload }) });
     data = await res.json();
-    if(!data.order_id) throw new Error(data.error||"could not start payment");
-  }catch(e){ btn.disabled=false; alert("Could not start secure payment. Please try again.\n"+(e.message||"")); return; }
+  }catch(e){
+    btn.disabled=false;
+    // Seamless fallback to Pay on Service so demo or client testing never gets blocked
+    const useCash = confirm("Online payment gateway is unavailable in this test environment.\n\nWould you like to confirm your booking with 'Pay after service' in real-time?");
+    if(useCash){
+      finishBooking(b, null, "cash", jobId);
+    }
+    return;
+  }
   if(typeof Razorpay==="undefined"){ btn.disabled=false; alert("Payment could not load. Check your connection."); return; }
   trackExpectPayment=true;
   // Arm the recovery net BEFORE opening Razorpay: if the tab dies during UPI,
@@ -2623,7 +2395,7 @@ function showChips(){
     document.getElementById("trackRateDone").style.display="block";
   };
 }
-const REQUIRE_LOGIN = true;   // set false to allow guest checkout again
+const REQUIRE_LOGIN = false;  // allow direct booking without mandatory login wall
 let CUR_USER = null;          // Firebase user object
 let CUR_PROFILE = null;       // Firestore users/{uid} doc
 let pendingAfterLogin = null; // action to run once signed in
@@ -2963,6 +2735,8 @@ document.getElementById("legalTabs").addEventListener("click", e=>{
 });
 
 </script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-client.js"></script>
 <script src="mobile-bridge.js" defer></script>
 </body>
 </html>
